@@ -51,8 +51,14 @@ final class CodeEditorTextView: NSTextView {
         }
     }
 
+    override func didChangeText() {
+        super.didChangeText()
+        onCaretChange?()
+    }
+
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
         super.setSelectedRange(charRange, affinity: affinity, stillSelecting: stillSelectingFlag)
         onCaretChange?()
     }
 }
+

@@ -65,6 +65,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu
 
+    private func buildThemeMenu() -> NSMenu {
+        let menu = NSMenu(title: "Theme")
+        for themeID in ThemeID.allCases {
+            let item = NSMenuItem(title: themeID.displayName, action: #selector(themeMenuItemSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = themeID.rawValue
+            item.state = (ThemeManager.shared.currentThemeID == themeID) ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func themeMenuItemSelected(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let id = ThemeID(rawValue: raw) else { return }
+        ThemeManager.shared.setTheme(id)
+        updateThemeMenuChecks()
+    }
+
+    private func updateThemeMenuChecks() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+        let currentID = ThemeManager.shared.currentThemeID
+        for item in mainMenu.items {
+            if let sub = item.submenu {
+                updateChecks(in: sub, currentID: currentID)
+            }
+        }
+    }
+
+    private func updateChecks(in menu: NSMenu, currentID: ThemeID) {
+        for subItem in menu.items {
+            if let raw = subItem.representedObject as? String, let id = ThemeID(rawValue: raw) {
+                subItem.state = (id == currentID) ? .on : .off
+            }
+            if let childMenu = subItem.submenu {
+                updateChecks(in: childMenu, currentID: currentID)
+            }
+        }
+    }
+
     private func buildMainMenu() {
         let mainMenu = NSMenu()
 
@@ -127,8 +166,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Toggle Fold", action: #selector(MainViewController.toggleFold(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .option]
         viewMenu.addItem(withTitle: "Unfold All", action: #selector(MainViewController.unfoldAll(_:)), keyEquivalent: "u").keyEquivalentModifierMask = [.command, .option]
+        viewMenu.addItem(.separator())
+        let viewThemeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        viewThemeItem.submenu = buildThemeMenu()
+        viewMenu.addItem(viewThemeItem)
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
+
+        let themeMenuItem = NSMenuItem()
+        themeMenuItem.submenu = buildThemeMenu()
+        mainMenu.addItem(themeMenuItem)
 
         let formatMenuItem = NSMenuItem()
         let formatMenu = NSMenu(title: "Format")

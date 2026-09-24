@@ -19,4 +19,10 @@ final class PreferencesStore {
         get { defaults.object(forKey: "wordWrapEnabled") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "wordWrapEnabled") }
     }
+
+    var theme: String {
+        get { defaults.string(forKey: "theme") ?? ThemeID.system.rawValue }
+        set { defaults.set(newValue, forKey: "theme") }
+    }
 }
+

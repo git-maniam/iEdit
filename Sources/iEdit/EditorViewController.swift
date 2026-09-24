@@ -27,6 +27,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     override func loadView() {
         let containerView = NSView()
 
@@ -48,8 +52,6 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         tv.usesFontPanel = false
         tv.allowsUndo = true
         tv.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        tv.textColor = NSColor.labelColor
-        tv.backgroundColor = NSColor.textBackgroundColor
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticSpellingCorrectionEnabled = false
@@ -93,6 +95,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         textStorage.delegate = self
         tv.onCaretChange = { [weak self] in self?.reportStatus() }
 
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeManager.themeDidChangeNotification, object: nil)
+
+        applyCurrentTheme()
         applyWrapSetting()
         SyntaxHighlighter.highlight(textStorage: textStorage, range: NSRange(location: 0, length: textStorage.length), language: document.language)
     }
@@ -106,6 +111,26 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         super.viewDidAppear()
         applyWrapSetting()
         reportStatus()
+    }
+
+    @objc private func themeDidChange(_ note: Notification) {
+        applyCurrentTheme()
+        rehighlightAll()
+    }
+
+    func applyCurrentTheme() {
+        guard let tv = textView else { return }
+        let theme = ThemeManager.shared.currentTheme
+        tv.backgroundColor = theme.editorBackground
+        tv.textColor = theme.editorForeground
+        tv.insertionPointColor = theme.caretColor
+        tv.selectedTextAttributes = [
+            .backgroundColor: theme.selectionBackground,
+            .foregroundColor: theme.editorForeground
+        ]
+        scrollView?.backgroundColor = theme.editorBackground
+        rulerView?.needsDisplay = true
+        tv.needsDisplay = true
     }
 
     func applyWrapSetting() {

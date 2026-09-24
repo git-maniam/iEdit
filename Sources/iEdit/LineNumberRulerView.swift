@@ -19,6 +19,7 @@ final class LineNumberRulerView: NSRulerView {
 
         NotificationCenter.default.addObserver(self, selector: #selector(contentBoundsDidChange), name: NSView.boundsDidChangeNotification, object: textView.enclosingScrollView?.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(textDidChange), name: NSText.didChangeNotification, object: textView)
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeManager.themeDidChangeNotification, object: nil)
         rebuildLineIndices()
     }
 
@@ -36,6 +37,10 @@ final class LineNumberRulerView: NSRulerView {
 
     @objc func textDidChange(_ note: Notification? = nil) {
         rebuildLineIndices()
+        needsDisplay = true
+    }
+
+    @objc private func themeDidChange(_ note: Notification) {
         needsDisplay = true
     }
 
@@ -81,14 +86,16 @@ final class LineNumberRulerView: NSRulerView {
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer else { return }
 
-        // Ruler background
-        let bg = NSColor.windowBackgroundColor
-        bg.setFill()
-        rect.fill()
+        let theme = ThemeManager.shared.currentTheme
+
+        // Ruler background - strictly within the ruler view bounds, never filling outside into text
+        let rulerBgRect = NSRect(x: 0, y: bounds.minY, width: bounds.width, height: bounds.height)
+        theme.rulerBackground.setFill()
+        rulerBgRect.fill()
 
         // Subtle right divider border
-        let borderRect = NSRect(x: bounds.maxX - 1, y: rect.minY, width: 1, height: rect.height)
-        NSColor.separatorColor.withAlphaComponent(0.6).setFill()
+        let borderRect = NSRect(x: bounds.maxX - 1, y: bounds.minY, width: 1, height: bounds.height)
+        theme.rulerBorder.setFill()
         borderRect.fill()
 
         let visibleRect = textView.enclosingScrollView?.contentView.bounds ?? textView.bounds
@@ -110,7 +117,7 @@ final class LineNumberRulerView: NSRulerView {
         paragraphStyle.alignment = .right
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.85),
+            .foregroundColor: theme.rulerForeground,
             .paragraphStyle: paragraphStyle
         ]
 
