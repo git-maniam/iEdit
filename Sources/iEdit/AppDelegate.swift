@@ -105,9 +105,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Find…", action: #selector(MainViewController.performFind(_:)), keyEquivalent: "f")
-        editMenu.addItem(withTitle: "Find in Files…", action: #selector(MainViewController.findInFilesMenu(_:)), keyEquivalent: "F")
+        let findSubmenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        let findSubmenu = NSMenu(title: "Find")
+        findSubmenu.addItem(withTitle: "Find…", action: #selector(MainViewController.performFind(_:)), keyEquivalent: "f")
+        let replaceItem = findSubmenu.addItem(withTitle: "Find and Replace…", action: #selector(MainViewController.performReplace(_:)), keyEquivalent: "f")
+        replaceItem.keyEquivalentModifierMask = [.command, .option]
+        findSubmenu.addItem(withTitle: "Find Next", action: #selector(MainViewController.findNextMenu(_:)), keyEquivalent: "g")
+        findSubmenu.addItem(withTitle: "Find Previous", action: #selector(MainViewController.findPreviousMenu(_:)), keyEquivalent: "G")
+        findSubmenu.addItem(.separator())
+        findSubmenu.addItem(withTitle: "Find in Files…", action: #selector(MainViewController.findInFilesMenu(_:)), keyEquivalent: "F")
+        findSubmenuItem.submenu = findSubmenu
+
+        editMenu.addItem(findSubmenuItem)
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 

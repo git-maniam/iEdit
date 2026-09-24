@@ -5,6 +5,7 @@ final class CodeEditorTextView: NSTextView {
     var useSpacesForTab: Bool = true
     var tabWidth: Int = 4
     var onCaretChange: (() -> Void)?
+    var onDoubleClickLine: ((String) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -40,8 +41,14 @@ final class CodeEditorTextView: NSTextView {
         insertText(indent, replacementRange: selectedRange())
     }
 
-    override func didChangeText() {
-        super.didChangeText()
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        if event.clickCount == 2 {
+            let ns = string as NSString
+            let lineRange = ns.lineRange(for: NSRange(location: selectedRange().location, length: 0))
+            let line = ns.substring(with: lineRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            onDoubleClickLine?(line)
+        }
     }
 
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {

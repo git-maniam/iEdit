@@ -20,6 +20,14 @@ enum SearchEngineError: Error, LocalizedError {
     }
 }
 
+struct SearchMatchResult {
+    let url: URL?
+    let lineNumber: Int
+    let columnNumber: Int
+    let lineText: String
+    let range: NSRange
+}
+
 enum SearchEngine {
 
     /// Translates literal escape sequences like \n \t \r \\ into their real characters.
@@ -58,11 +66,17 @@ enum SearchEngine {
             let literal = options.useEscapes ? unescape(find) : find
             pattern = NSRegularExpression.escapedPattern(for: literal)
         }
+
         if options.wholeWord {
             pattern = "\\b(?:\(pattern))\\b"
         }
+
         var regexOptions: NSRegularExpression.Options = []
         if !options.matchCase { regexOptions.insert(.caseInsensitive) }
+        if options.useRegex {
+            regexOptions.insert(.dotMatchesLineSeparators)
+        }
+
         do {
             return try NSRegularExpression(pattern: pattern, options: regexOptions)
         } catch {
@@ -88,7 +102,7 @@ enum SearchEngine {
         if let match = regex.firstMatch(in: text, range: forwardRange) {
             return match.range
         }
-        if wrap {
+        if wrap && searchStart > 0 {
             let wrapRange = NSRange(location: 0, length: searchStart)
             if let match = regex.firstMatch(in: text, range: wrapRange) {
                 return match.range
@@ -105,7 +119,7 @@ enum SearchEngine {
         if let last = matches.last {
             return last.range
         }
-        if wrap {
+        if wrap && searchEnd < ns.length {
             let wrapRange = NSRange(location: searchEnd, length: ns.length - searchEnd)
             let matches2 = regex.matches(in: text, range: wrapRange)
             if let last = matches2.last { return last.range }
@@ -115,6 +129,10 @@ enum SearchEngine {
 
     static func replacementTemplate(for replaceText: String, options: SearchOptions) -> String {
         if options.useRegex {
+            if options.useEscapes {
+                // In regex replacement templates, $1, $2 are variables, but \n \t should expand to real whitespace
+                return unescape(replaceText)
+            }
             return replaceText
         }
         let literal = options.useEscapes ? unescape(replaceText) : replaceText

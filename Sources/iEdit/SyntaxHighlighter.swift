@@ -11,14 +11,60 @@ struct TokenRule {
 }
 
 enum SyntaxColors {
-    static let keyword = NSColor(srgbRed: 1.00, green: 0.32, blue: 0.68, alpha: 1)
-    static let string = NSColor(srgbRed: 1.00, green: 0.42, blue: 0.42, alpha: 1)
-    static let number = NSColor(srgbRed: 0.40, green: 0.78, blue: 1.00, alpha: 1)
-    static let comment = NSColor(srgbRed: 0.40, green: 0.92, blue: 0.55, alpha: 1)
-    static let tag = NSColor(srgbRed: 0.80, green: 0.55, blue: 1.00, alpha: 1)
-    static let attribute = NSColor(srgbRed: 1.00, green: 0.68, blue: 0.26, alpha: 1)
-    static let key = NSColor(srgbRed: 0.40, green: 0.78, blue: 1.00, alpha: 1)
-    static let literal = NSColor(srgbRed: 0.80, green: 0.55, blue: 1.00, alpha: 1)
+    private static func dynamicColor(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        }
+    }
+
+    /// EditPlus Classic Keyword: Rich Royal Blue in light mode, Bright Electric Blue in dark mode
+    static let keyword = dynamicColor(
+        light: NSColor(srgbRed: 0.00, green: 0.00, blue: 0.95, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.25, green: 0.65, blue: 1.00, alpha: 1.0)
+    )
+
+    /// EditPlus Classic String: Deep Crimson/Red in light mode, Vibrant Coral/Red in dark mode
+    static let string = dynamicColor(
+        light: NSColor(srgbRed: 0.65, green: 0.08, blue: 0.08, alpha: 1.0),
+        dark: NSColor(srgbRed: 1.00, green: 0.45, blue: 0.45, alpha: 1.0)
+    )
+
+    /// EditPlus Classic Number: Teal / Dark Cyan in light mode, Vivid Aqua Cyan in dark mode
+    static let number = dynamicColor(
+        light: NSColor(srgbRed: 0.00, green: 0.50, blue: 0.50, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.15, green: 0.88, blue: 0.95, alpha: 1.0)
+    )
+
+    /// EditPlus Classic Comment: Forest Green in light mode, Bright Lime Green in dark mode
+    static let comment = dynamicColor(
+        light: NSColor(srgbRed: 0.00, green: 0.52, blue: 0.00, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.30, green: 0.88, blue: 0.40, alpha: 1.0)
+    )
+
+    /// EditPlus Classic HTML/XML Tag: Bold Blue in light mode, Bright Sky Blue in dark mode
+    static let tag = dynamicColor(
+        light: NSColor(srgbRed: 0.00, green: 0.15, blue: 0.85, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.35, green: 0.75, blue: 1.00, alpha: 1.0)
+    )
+
+    /// EditPlus Classic Attribute: Purple/Magenta in light mode, Vivid Orchid/Magenta in dark mode
+    static let attribute = dynamicColor(
+        light: NSColor(srgbRed: 0.55, green: 0.00, blue: 0.55, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.92, green: 0.45, blue: 0.98, alpha: 1.0)
+    )
+
+    /// EditPlus Classic JSON Key: Deep Royal Navy in light mode, Bright Azure in dark mode
+    static let key = dynamicColor(
+        light: NSColor(srgbRed: 0.02, green: 0.20, blue: 0.80, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.30, green: 0.80, blue: 1.00, alpha: 1.0)
+    )
+
+    /// EditPlus Classic Literal: Bold Blue in light mode, Bright Electric Blue in dark mode
+    static let literal = dynamicColor(
+        light: NSColor(srgbRed: 0.00, green: 0.00, blue: 0.95, alpha: 1.0),
+        dark: NSColor(srgbRed: 0.40, green: 0.70, blue: 1.00, alpha: 1.0)
+    )
+
     static let plain = NSColor.labelColor
 }
 
@@ -75,13 +121,61 @@ final class SyntaxHighlighter {
     static func highlight(textStorage: NSTextStorage, range: NSRange, language: Language) {
         guard range.length > 0 else { return }
         let rules = rules(for: language)
+        guard !rules.isEmpty else {
+            textStorage.beginEditing()
+            textStorage.removeAttribute(.foregroundColor, range: range)
+            textStorage.addAttribute(.foregroundColor, value: SyntaxColors.plain, range: range)
+            textStorage.endEditing()
+            return
+        }
+
+        let fullString = textStorage.string as NSString
+        guard range.location < fullString.length else { return }
+        let clampedLength = min(range.length, fullString.length - range.location)
+        let searchRange = NSRange(location: range.location, length: clampedLength)
+
+        // For large files (> 200,000 characters), avoid blocking the UI thread for multiple seconds.
+        // We highlight the first 50,000 characters synchronously, then dispatch remaining chunks asynchronously.
+        if clampedLength > 200_000 {
+            let initialChunk = NSRange(location: searchRange.location, length: min(50_000, clampedLength))
+            applyRules(rules, to: textStorage, range: initialChunk, string: fullString)
+
+            let remainingStart = searchRange.location + initialChunk.length
+            let remainingLength = searchRange.length - initialChunk.length
+            if remainingLength > 0 {
+                let remainingRange = NSRange(location: remainingStart, length: remainingLength)
+                let textSnapshot = textStorage.string
+                DispatchQueue.global(qos: .userInitiated).async {
+                    var matchesToApply: [(NSRange, NSColor)] = []
+                    for rule in rules {
+                        rule.regex.enumerateMatches(in: textSnapshot, options: [], range: remainingRange) { match, _, _ in
+                            guard let match = match else { return }
+                            matchesToApply.append((match.range, rule.color))
+                        }
+                    }
+                    DispatchQueue.main.async {
+                        guard textStorage.string == textSnapshot else { return }
+                        textStorage.beginEditing()
+                        for (r, color) in matchesToApply {
+                            if r.location + r.length <= textStorage.length {
+                                textStorage.addAttribute(.foregroundColor, value: color, range: r)
+                            }
+                        }
+                        textStorage.endEditing()
+                    }
+                }
+            }
+        } else {
+            applyRules(rules, to: textStorage, range: searchRange, string: fullString)
+        }
+    }
+
+    private static func applyRules(_ rules: [TokenRule], to textStorage: NSTextStorage, range: NSRange, string: NSString) {
         textStorage.beginEditing()
         textStorage.removeAttribute(.foregroundColor, range: range)
         textStorage.addAttribute(.foregroundColor, value: SyntaxColors.plain, range: range)
-        let fullString = textStorage.string as NSString
-        let searchRange = NSRange(location: range.location, length: min(range.length, fullString.length - range.location))
         for rule in rules {
-            rule.regex.enumerateMatches(in: textStorage.string, options: [], range: searchRange) { match, _, _ in
+            rule.regex.enumerateMatches(in: textStorage.string, options: [], range: range) { match, _, _ in
                 guard let match = match else { return }
                 textStorage.addAttribute(.foregroundColor, value: rule.color, range: match.range)
             }

@@ -2,17 +2,19 @@ import Cocoa
 
 final class EditorDocument {
     var fileURL: URL?
+    var customTitle: String?
     var language: Language
     var encoding: String.Encoding = .utf8
     var isDirty: Bool = false
     var textStorage: NSTextStorage
 
     var displayName: String {
-        fileURL?.lastPathComponent ?? "Untitled"
+        customTitle ?? fileURL?.lastPathComponent ?? "Untitled"
     }
 
-    init(fileURL: URL? = nil, content: String = "") {
+    init(fileURL: URL? = nil, content: String = "", customTitle: String? = nil) {
         self.fileURL = fileURL
+        self.customTitle = customTitle
         self.language = Language.detect(fromURL: fileURL)
         self.textStorage = NSTextStorage(string: content)
     }
@@ -35,6 +37,7 @@ final class EditorDocument {
         let string = textStorage.string
         try string.write(to: url, atomically: true, encoding: encoding)
         self.fileURL = url
+        self.customTitle = nil
         self.language = Language.detect(fromURL: url)
         self.isDirty = false
     }

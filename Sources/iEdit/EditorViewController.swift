@@ -32,13 +32,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
         let textStorage = document.textStorage
         let layoutManager = NSLayoutManager()
+        layoutManager.allowsNonContiguousLayout = true
         textStorage.addLayoutManager(layoutManager)
-        let containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        let initialWidth: CGFloat = 800
+        let containerSize = NSSize(width: initialWidth, height: CGFloat.greatestFiniteMagnitude)
         let textContainer = NSTextContainer(containerSize: containerSize)
         textContainer.widthTracksTextView = true
         layoutManager.addTextContainer(textContainer)
 
-        let tv = CodeEditorTextView(frame: .zero, textContainer: textContainer)
+        let tv = CodeEditorTextView(frame: NSRect(x: 0, y: 0, width: initialWidth, height: 600), textContainer: textContainer)
         tv.isEditable = true
         tv.isSelectable = true
         tv.isRichText = false
@@ -54,16 +57,19 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         tv.delegate = self
         tv.tabWidth = PreferencesStore.shared.tabWidth
         tv.useSpacesForTab = PreferencesStore.shared.useSpaces
-        tv.textContainerInset = NSSize(width: 4, height: 6)
+        tv.textContainerInset = NSSize(width: 6, height: 8)
         tv.minSize = NSSize(width: 0, height: 0)
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = [.width]
         self.textView = tv
 
         let sv = NSScrollView()
         sv.hasVerticalScroller = true
-        sv.hasHorizontalScroller = true
-        sv.autohidesScrollers = true
+        sv.hasHorizontalScroller = false
+        sv.autohidesScrollers = false
+        sv.scrollerStyle = .legacy
         sv.documentView = tv
         sv.translatesAutoresizingMaskIntoConstraints = false
         self.scrollView = sv
@@ -91,25 +97,33 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         SyntaxHighlighter.highlight(textStorage: textStorage, range: NSRange(location: 0, length: textStorage.length), language: document.language)
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        applyWrapSetting()
+    }
+
     override func viewDidAppear() {
         super.viewDidAppear()
+        applyWrapSetting()
         reportStatus()
     }
 
     func applyWrapSetting() {
-        guard let tv = textView, let container = tv.textContainer else { return }
+        guard let tv = textView, let container = tv.textContainer, let sv = scrollView else { return }
+        let currentWidth = sv.contentSize.width > 0 ? sv.contentSize.width : 800
         if wordWrapEnabled {
             container.widthTracksTextView = true
             tv.isHorizontallyResizable = false
             tv.autoresizingMask = [.width]
-            scrollView.hasHorizontalScroller = false
-            container.size = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+            sv.hasHorizontalScroller = false
+            container.containerSize = NSSize(width: currentWidth, height: CGFloat.greatestFiniteMagnitude)
         } else {
             container.widthTracksTextView = false
             tv.isHorizontallyResizable = true
             tv.autoresizingMask = []
-            scrollView.hasHorizontalScroller = true
-            container.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            sv.hasHorizontalScroller = true
+            container.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -127,18 +141,42 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         delegate?.editorDidChangeStatus(self, line: line, column: column, selectionLength: selected.length)
     }
 
-    // MARK: NSTextStorageDelegate
+    // MARK: - In-Editor Search Highlighting (Non-destructive)
+
+    func clearSearchHighlights() {
+        guard let layoutManager = textView?.layoutManager,
+              let textStorage = textView?.textStorage else { return }
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
+    }
+
+    func highlightMatches(_ ranges: [NSRange], currentMatchIndex: Int?) {
+        guard let layoutManager = textView?.layoutManager,
+              let textStorage = textView?.textStorage else { return }
+        clearSearchHighlights()
+        let matchBg = NSColor.systemYellow.withAlphaComponent(0.35)
+        let activeBg = NSColor.systemOrange.withAlphaComponent(0.70)
+
+        for (idx, range) in ranges.enumerated() {
+            guard range.location + range.length <= textStorage.length else { continue }
+            let color = (idx == currentMatchIndex) ? activeBg : matchBg
+            layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
+        }
+    }
+
+    // MARK: - NSTextStorageDelegate
 
     func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange, changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) else { return }
         document.isDirty = true
         delegate?.editorDidChangeDirtyState(self, isDirty: true)
+        rulerView?.rebuildLineIndices()
 
         let ns = textStorage.string as NSString
         let lineRange = ns.lineRange(for: NSRange(location: max(0, min(editedRange.location, ns.length)), length: 0))
         var expanded = NSUnionRange(editedRange, lineRange)
         expanded = ns.paragraphRange(for: NSRange(location: expanded.location, length: min(expanded.length, ns.length - expanded.location)))
-        if textStorage.length > 3_000_000 {
+        if textStorage.length > 300_000 {
             // Large file: only highlight the edited paragraph range to stay fast.
             SyntaxHighlighter.highlight(textStorage: textStorage, range: expanded, language: document.language)
         } else {

@@ -7,7 +7,6 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
     private let statusBar = StatusBarView()
     private var findBarController: FindReplaceBarViewController!
     private var findBarHeightConstraint: NSLayoutConstraint!
-    private var findBarTopConstraint: NSLayoutConstraint!
 
     private(set) var editors: [EditorViewController] = []
     private var selectedIndex: Int = -1
@@ -76,6 +75,10 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
         let controller = EditorViewController(document: document)
         controller.delegate = self
         controller.wordWrapEnabled = PreferencesStore.shared.wordWrapEnabled
+        _ = controller.view
+        controller.textView?.onDoubleClickLine = { [weak self] line in
+            self?.handleLineDoubleClick(line)
+        }
         addChild(controller)
         editors.append(controller)
         if select {
@@ -93,7 +96,10 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
 
     private func selectTab(at index: Int) {
         guard index >= 0, index < editors.count else { return }
-        editors[selectedIndex >= 0 && selectedIndex < editors.count ? selectedIndex : index].view.removeFromSuperview()
+        if selectedIndex >= 0 && selectedIndex < editors.count {
+            editors[selectedIndex].view.removeFromSuperview()
+            editors[selectedIndex].clearSearchHighlights()
+        }
         selectedIndex = index
         let controller = editors[index]
         controller.view.translatesAutoresizingMaskIntoConstraints = false
@@ -105,10 +111,15 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
             controller.view.leadingAnchor.constraint(equalTo: editorContainer.leadingAnchor),
             controller.view.trailingAnchor.constraint(equalTo: editorContainer.trailingAnchor),
         ])
+        controller.applyWrapSetting()
         reloadTabBar()
         updateWindowTitle()
         controller.reportStatus()
         view.window?.makeFirstResponder(controller.textView)
+
+        if !findBarController.view.isHidden {
+            findBarController.focusFindField()
+        }
     }
 
     private func updateWindowTitle() {
@@ -136,7 +147,7 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
         statusBar.update(line: line, column: column, selectionLength: selected.length,
                           encoding: editor.document.encodingName,
                           language: editor.document.language.rawValue,
-                          path: editor.document.fileURL?.path ?? "Untitled")
+                          path: editor.document.fileURL?.path ?? editor.document.displayName)
     }
 
     @objc func newTab(_ sender: Any?) {
@@ -313,25 +324,80 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
     // MARK: - Find & Replace
 
     @objc func performFind(_ sender: Any?) {
-        showFindBar()
+        showFindBar(focusReplace: false)
+    }
+
+    @objc func performReplace(_ sender: Any?) {
+        showFindBar(focusReplace: true)
+    }
+
+    @objc func findNextMenu(_ sender: Any?) {
+        if findBarController.view.isHidden {
+            showFindBar(focusReplace: false)
+        } else {
+            findBarController.findNextAction()
+        }
+    }
+
+    @objc func findPreviousMenu(_ sender: Any?) {
+        if findBarController.view.isHidden {
+            showFindBar(focusReplace: false)
+        } else {
+            findBarController.findPreviousAction()
+        }
     }
 
     @objc func findInFilesMenu(_ sender: Any?) {
-        showFindBar()
+        showFindBar(focusReplace: false, scope: .directory)
     }
 
-    private func showFindBar() {
+    private func showFindBar(focusReplace: Bool = false, scope: SearchScope? = nil) {
         guard selectedIndex >= 0, selectedIndex < editors.count else { return }
         editors[selectedIndex].unfoldAllFolds()
         findBarController.view.isHidden = false
         findBarHeightConstraint.isActive = false
-        findBarController.focusFindField()
+        if let scope {
+            findBarController.setScope(scope)
+        }
+        if focusReplace {
+            findBarController.focusReplaceField()
+        } else {
+            findBarController.focusFindField()
+        }
     }
 
     func hideFindBar() {
+        findBarController.clearHighlights()
         findBarController.view.isHidden = true
         findBarHeightConstraint.isActive = true
         view.window?.makeFirstResponder(editors[safe: selectedIndex]?.textView)
+    }
+
+    // MARK: - Double Click Results Navigation
+
+    private func handleLineDoubleClick(_ line: String) {
+        // Match EditPlus format: /path/to/file.ext (line, col): content
+        // Or standard: /path/to/file.ext:line:col:
+        let pattern1 = "^(/.+?)\\s*\\(([0-9]+)(?:,\\s*([0-9]+))?\\):"
+        let pattern2 = "^(/.+?):([0-9]+)(?::([0-9]+))?:"
+
+        for pattern in [pattern1, pattern2] {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { continue }
+            let ns = line as NSString
+            if let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+                let filePath = ns.substring(with: match.range(at: 1))
+                let lineNum = Int(ns.substring(with: match.range(at: 2))) ?? 1
+                var colNum = 1
+                if match.numberOfRanges > 3 && match.range(at: 3).location != NSNotFound {
+                    colNum = Int(ns.substring(with: match.range(at: 3))) ?? 1
+                }
+                let url = URL(fileURLWithPath: filePath)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    frOpenFileAndJump(url: url, line: lineNum, column: colNum)
+                    return
+                }
+            }
+        }
     }
 
     // MARK: - JSON / HTML tools
@@ -397,7 +463,7 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
         statusBar.update(line: line, column: column, selectionLength: selectionLength,
                           encoding: controller.document.encodingName,
                           language: controller.document.language.rawValue,
-                          path: controller.document.fileURL?.path ?? "Untitled")
+                          path: controller.document.fileURL?.path ?? controller.document.displayName)
     }
 
     func editorDidChangeDirtyState(_ controller: EditorViewController, isDirty: Bool) {
@@ -422,6 +488,66 @@ final class MainViewController: NSViewController, TabBarViewDelegate, EditorView
     func frJumpToEditor(_ controller: EditorViewController) {
         if let idx = editors.firstIndex(where: { $0 === controller }) {
             selectTab(at: idx)
+        }
+    }
+
+    func frOpenFileAndJump(url: URL, line: Int, column: Int) {
+        openFile(url: url)
+        guard let editor = currentEditorChecked() else { return }
+        let text = editor.textView.string as NSString
+        var currentLine = 1
+        var lineStart = 0
+        var i = 0
+        while i < text.length {
+            if currentLine == line {
+                lineStart = i
+                break
+            }
+            if text.character(at: i) == 10 {
+                currentLine += 1
+            }
+            i += 1
+        }
+        let targetLoc = min(lineStart + max(0, column - 1), text.length)
+        let lineRange = text.lineRange(for: NSRange(location: targetLoc, length: 0))
+        editor.textView.setSelectedRange(NSRange(location: targetLoc, length: 0))
+        editor.textView.scrollRangeToVisible(lineRange)
+        view.window?.makeFirstResponder(editor.textView)
+    }
+
+    func frDisplayFindResults(query: String, directory: URL, results: [SearchMatchResult], isReplace: Bool, replaceCount: Int, filesChanged: Int) {
+        var output = ""
+        let sep = String(repeating: "-", count: 80)
+        if isReplace {
+            output += "Replace in Files: \"\(query)\"\n"
+            output += "Directory: \(directory.path)\n"
+            output += "\(sep)\n"
+            output += "Replaced \(replaceCount) occurrence(s) across \(filesChanged) file(s).\n"
+        } else {
+            output += "Find in Files: \"\(query)\"\n"
+            output += "Directory: \(directory.path)\n"
+            output += "\(sep)\n"
+            for res in results {
+                let filePath = res.url?.path ?? "Unknown"
+                output += "\(filePath) (\(res.lineNumber), \(res.columnNumber)): \(res.lineText)\n"
+            }
+            output += "\(sep)\n"
+            let uniqueFiles = Set(results.compactMap { $0.url }).count
+            output += "Found \(results.count) occurrence(s) in \(uniqueFiles) file(s).\n"
+            output += "(Double-click on any line above to open and jump to that file and location)\n"
+        }
+
+        if let existingIdx = editors.firstIndex(where: { $0.document.displayName == "Find Results" }) {
+            let ed = editors[existingIdx]
+            let fullRange = NSRange(location: 0, length: (ed.textView.string as NSString).length)
+            if ed.textView.shouldChangeText(in: fullRange, replacementString: output) {
+                ed.textView.replaceCharacters(in: fullRange, with: output)
+                ed.textView.didChangeText()
+            }
+            selectTab(at: existingIdx)
+        } else {
+            let doc = EditorDocument(fileURL: nil, content: output, customTitle: "Find Results")
+            addTab(document: doc, select: true)
         }
     }
 }
