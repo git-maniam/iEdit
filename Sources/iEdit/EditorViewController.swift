@@ -55,6 +55,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         tv.tabWidth = PreferencesStore.shared.tabWidth
         tv.useSpacesForTab = PreferencesStore.shared.useSpaces
         tv.textContainerInset = NSSize(width: 4, height: 6)
+        tv.minSize = NSSize(width: 0, height: 0)
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.isVerticallyResizable = true
         self.textView = tv
 
         let sv = NSScrollView()

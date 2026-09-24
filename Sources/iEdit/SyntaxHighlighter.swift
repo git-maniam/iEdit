@@ -11,14 +11,14 @@ struct TokenRule {
 }
 
 enum SyntaxColors {
-    static let keyword = NSColor.systemPink
-    static let string = NSColor.systemRed
-    static let number = NSColor.systemBlue
-    static let comment = NSColor.systemGreen
-    static let tag = NSColor.systemPurple
-    static let attribute = NSColor.systemOrange
-    static let key = NSColor.systemBlue
-    static let literal = NSColor.systemPurple
+    static let keyword = NSColor(srgbRed: 1.00, green: 0.32, blue: 0.68, alpha: 1)
+    static let string = NSColor(srgbRed: 1.00, green: 0.42, blue: 0.42, alpha: 1)
+    static let number = NSColor(srgbRed: 0.40, green: 0.78, blue: 1.00, alpha: 1)
+    static let comment = NSColor(srgbRed: 0.40, green: 0.92, blue: 0.55, alpha: 1)
+    static let tag = NSColor(srgbRed: 0.80, green: 0.55, blue: 1.00, alpha: 1)
+    static let attribute = NSColor(srgbRed: 1.00, green: 0.68, blue: 0.26, alpha: 1)
+    static let key = NSColor(srgbRed: 0.40, green: 0.78, blue: 1.00, alpha: 1)
+    static let literal = NSColor(srgbRed: 0.80, green: 0.55, blue: 1.00, alpha: 1)
     static let plain = NSColor.labelColor
 }
 
