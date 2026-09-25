@@ -1,7 +1,7 @@
 import Foundation
 
 enum Language: String, CaseIterable {
-    case plainText = "Plain Text"
+    case plainText = "Text"
     case json = "JSON"
     case html = "HTML"
     case css = "CSS"
@@ -9,10 +9,37 @@ enum Language: String, CaseIterable {
     case xml = "XML"
     case swift = "Swift"
     case python = "Python"
+    case go = "Go"
     case markdown = "Markdown"
     case shell = "Shell Script"
     case sql = "SQL"
     case yaml = "YAML"
+
+    /// The highlighters offered in the Format menu, alphabetically sorted.
+    /// Languages outside this list (Swift, Markdown, Shell Script, SQL) are still
+    /// applied automatically when a matching file is opened.
+    static let menuSelectable: [Language] = [
+        .css, .go, .html, .javascript, .json, .python, .plainText, .xml, .yaml,
+    ]
+
+    /// Extension suggested in the Save panel for a document using this highlighter.
+    var defaultExtension: String {
+        switch self {
+        case .plainText: return "txt"
+        case .json: return "json"
+        case .html: return "html"
+        case .css: return "css"
+        case .javascript: return "js"
+        case .xml: return "xml"
+        case .swift: return "swift"
+        case .python: return "py"
+        case .go: return "go"
+        case .markdown: return "md"
+        case .shell: return "sh"
+        case .sql: return "sql"
+        case .yaml: return "yaml"
+        }
+    }
 
     static func detect(fromExtension ext: String) -> Language {
         switch ext.lowercased() {
@@ -30,6 +57,8 @@ enum Language: String, CaseIterable {
             return .swift
         case "py", "pyw", "python":
             return .python
+        case "go":
+            return .go
         case "md", "markdown", "mdown":
             return .markdown
         case "sh", "bash", "zsh", "fish":

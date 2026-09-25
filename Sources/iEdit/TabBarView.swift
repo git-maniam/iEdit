@@ -94,6 +94,7 @@ final class TabBarView: NSView {
         clip.drawsBackground = false
         scrollView.contentView = clip
         scrollView.documentView = stack
+        scrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         newTabButton.title = ""
         newTabButton.isBordered = false
@@ -116,9 +117,11 @@ final class TabBarView: NSView {
             newTabButton.widthAnchor.constraint(equalToConstant: 20),
             newTabButton.heightAnchor.constraint(equalToConstant: 20),
 
-            stack.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 4),
-            stack.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -4),
-            stack.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            // Pin to the clip view (not the scroll view) so the stack is laid out in
+            // the scrollable content coordinate space and the chips actually appear.
+            stack.topAnchor.constraint(equalTo: clip.topAnchor, constant: 4),
+            stack.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: clip.trailingAnchor),
             stack.heightAnchor.constraint(equalToConstant: 28),
         ])
     }
@@ -152,5 +155,5 @@ final class TabBarView: NSView {
 }
 
 final class FlippedClipView: NSClipView {
-    override var isFlipped: Bool { false }
+    override var isFlipped: Bool { true }
 }

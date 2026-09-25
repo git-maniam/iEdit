@@ -14,11 +14,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private(set) var textView: CodeEditorTextView!
     private var rulerView: LineNumberRulerView!
 
-    var wordWrapEnabled: Bool = true {
-        didSet { applyWrapSetting() }
-    }
+    /// Mirrors the app-wide preference; see `PreferencesStore.wordWrapEnabled`.
+    var wordWrapEnabled: Bool { PreferencesStore.shared.wordWrapEnabled }
 
     let foldManager = FoldManager()
+
+    /// Width the wrap setting was last computed for; see `viewDidLayout`.
+    private var lastWrapWidth: CGFloat = -1
 
     init(document: EditorDocument) {
         self.document = document
@@ -51,7 +53,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         tv.isRichText = false
         tv.usesFontPanel = false
         tv.allowsUndo = true
-        tv.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        tv.font = EditorFontManager.shared.font
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticSpellingCorrectionEnabled = false
@@ -96,6 +98,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         tv.onCaretChange = { [weak self] in self?.reportStatus() }
 
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeManager.themeDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(fontDidChange), name: EditorFontManager.fontDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(wordWrapDidChange), name: PreferencesStore.wordWrapDidChangeNotification, object: nil)
 
         applyCurrentTheme()
         applyWrapSetting()
@@ -104,6 +108,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        // Re-wrapping is only needed when the usable width actually changed; doing it
+        // on every layout pass is expensive on large files and can loop.
+        guard abs(usableTextWidth() - lastWrapWidth) > 0.5 else { return }
         applyWrapSetting()
     }
 
@@ -116,6 +123,26 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     @objc private func themeDidChange(_ note: Notification) {
         applyCurrentTheme()
         rehighlightAll()
+    }
+
+    @objc private func fontDidChange(_ note: Notification) {
+        textView?.font = EditorFontManager.shared.font
+        rehighlightAll()
+        applyWrapSetting()
+        rulerView?.needsDisplay = true
+    }
+
+    @objc private func wordWrapDidChange(_ note: Notification) {
+        applyWrapSetting()
+    }
+
+    /// Switches the highlighter for this tab and repaints. Used by the Format menu.
+    func setLanguage(_ language: Language) {
+        guard document.language != language else { return }
+        unfoldAllFolds()
+        document.language = language
+        rehighlightAll()
+        reportStatus()
     }
 
     func applyCurrentTheme() {
@@ -133,23 +160,44 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         tv.needsDisplay = true
     }
 
+    /// Width actually available to text. The clip view spans the full scroll view,
+    /// so the line-number ruler has to be subtracted by hand — without this, wrapped
+    /// lines break a few characters past the right edge and get clipped.
+    private func usableTextWidth() -> CGFloat {
+        guard let sv = scrollView else { return 0 }
+        let rulerWidth = sv.rulersVisible ? (sv.verticalRulerView?.ruleThickness ?? 0) : 0
+        return sv.contentView.bounds.width - rulerWidth
+    }
+
     func applyWrapSetting() {
         guard let tv = textView, let container = tv.textContainer, let sv = scrollView else { return }
-        let currentWidth = sv.contentSize.width > 0 ? sv.contentSize.width : 800
+        // A very large but finite bound: AppKit mislays text when a container is sized
+        // with CGFloat.greatestFiniteMagnitude.
+        let unbounded: CGFloat = 10_000_000
+        let usableWidth = usableTextWidth()
+        lastWrapWidth = usableWidth
+        let currentWidth = usableWidth > 0 ? usableWidth : 800
         if wordWrapEnabled {
             container.widthTracksTextView = true
             tv.isHorizontallyResizable = false
             tv.autoresizingMask = [.width]
+            tv.minSize = NSSize(width: 0, height: 0)
+            tv.maxSize = NSSize(width: unbounded, height: unbounded)
+            tv.setFrameSize(NSSize(width: currentWidth, height: tv.frame.height))
             sv.hasHorizontalScroller = false
-            container.containerSize = NSSize(width: currentWidth, height: CGFloat.greatestFiniteMagnitude)
         } else {
             container.widthTracksTextView = false
+            container.containerSize = NSSize(width: unbounded, height: unbounded)
             tv.isHorizontallyResizable = true
             tv.autoresizingMask = []
+            tv.minSize = NSSize(width: currentWidth, height: 0)
+            tv.maxSize = NSSize(width: unbounded, height: unbounded)
             sv.hasHorizontalScroller = true
-            container.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
+        tv.layoutManager?.ensureLayout(for: container)
+        tv.sizeToFit()
+        tv.needsDisplay = true
+        rulerView?.needsDisplay = true
     }
 
     func reportStatus() {

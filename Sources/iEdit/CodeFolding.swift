@@ -105,7 +105,7 @@ final class FoldManager {
         let full = NSRange(location: 0, length: (summary as NSString).length)
         placeholder.addAttribute(.foregroundColor, value: NSColor.white, range: full)
         placeholder.addAttribute(.backgroundColor, value: NSColor.systemGray, range: full)
-        placeholder.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium), range: full)
+        placeholder.addAttribute(.font, value: EditorFontManager.shared.font, range: full)
         placeholder.addAttribute(Self.foldAttributeKey, value: id, range: full)
 
         textStorage.replaceCharacters(in: range, with: placeholder)

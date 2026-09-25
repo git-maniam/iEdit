@@ -38,8 +38,20 @@ final class EditorDocument {
         try string.write(to: url, atomically: true, encoding: encoding)
         self.fileURL = url
         self.customTitle = nil
+        // The saved name is authoritative: a file written as .md highlights as Markdown
+        // even if JSON was picked in the Format menu.
         self.language = Language.detect(fromURL: url)
         self.isDirty = false
+    }
+
+    /// Name to pre-fill in the Save panel. For a document that has never been saved
+    /// this appends the current highlighter's extension, e.g. "Untitled.json".
+    var suggestedFileName: String {
+        if let fileURL { return fileURL.lastPathComponent }
+        let base = customTitle ?? "Untitled"
+        let ext = language.defaultExtension
+        if (base as NSString).pathExtension.lowercased() == ext { return base }
+        return "\((base as NSString).deletingPathExtension).\(ext)"
     }
 
     var encodingName: String {

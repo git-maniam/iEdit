@@ -20,6 +20,7 @@ final class LineNumberRulerView: NSRulerView {
         NotificationCenter.default.addObserver(self, selector: #selector(contentBoundsDidChange), name: NSView.boundsDidChangeNotification, object: textView.enclosingScrollView?.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(textDidChange), name: NSText.didChangeNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeManager.themeDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(fontDidChange), name: EditorFontManager.fontDidChangeNotification, object: nil)
         rebuildLineIndices()
     }
 
@@ -41,6 +42,10 @@ final class LineNumberRulerView: NSRulerView {
     }
 
     @objc private func themeDidChange(_ note: Notification) {
+        needsDisplay = true
+    }
+
+    @objc private func fontDidChange(_ note: Notification) {
         needsDisplay = true
     }
 
@@ -111,15 +116,22 @@ final class LineNumberRulerView: NSRulerView {
             rebuildLineIndices()
         }
 
-        var lineNumber = self.lineNumber(for: visibleCharRange.location)
-
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .right
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular),
+            .font: EditorFontManager.shared.rulerFont(),
             .foregroundColor: theme.rulerForeground,
             .paragraphStyle: paragraphStyle
         ]
+
+        func drawNumber(_ number: Int, inFragment rect: NSRect) {
+            // In flipped coordinates, y matches the text view top offset relative to the scroll clip view
+            let y = rect.minY + containerOrigin.y - visibleRect.minY
+            let numberString = "\(number)" as NSString
+            let size = numberString.size(withAttributes: attrs)
+            let drawRect = NSRect(x: 0, y: y + (rect.height - size.height) / 2, width: ruleThickness - 8, height: size.height)
+            numberString.draw(in: drawRect, withAttributes: attrs)
+        }
 
         var charIndex = visibleCharRange.location
         let endIndex = visibleCharRange.location + visibleCharRange.length
@@ -129,20 +141,25 @@ final class LineNumberRulerView: NSRulerView {
             var effectiveRange = NSRange(location: 0, length: 0)
             let lineFragmentRect = layoutManager.lineFragmentRect(forGlyphAt: min(lineGlyphRange.location, max(layoutManager.numberOfGlyphs - 1, 0)), effectiveRange: &effectiveRange, withoutAdditionalLayout: true)
 
-            if lineFragmentRect.height > 0 {
-                // In flipped coordinates, y matches the text view top offset relative to the scroll clip view
-                let y = lineFragmentRect.minY + containerOrigin.y - visibleRect.minY
-                let numberString = "\(lineNumber)" as NSString
-                let size = numberString.size(withAttributes: attrs)
-                let drawRect = NSRect(x: 0, y: y + (lineFragmentRect.height - size.height) / 2, width: ruleThickness - 8, height: size.height)
-                numberString.draw(in: drawRect, withAttributes: attrs)
+            // With word wrap on, one logical line spans several fragments. Only the
+            // fragment that starts the line gets a number; continuations stay blank.
+            let startsLogicalLine = charIndex == 0 || string.character(at: charIndex - 1) == 10
+            if lineFragmentRect.height > 0 && startsLogicalLine {
+                drawNumber(lineNumber(for: charIndex), inFragment: lineFragmentRect)
             }
 
             let lineCharRange = layoutManager.characterRange(forGlyphRange: lineFragmentRect.isEmpty ? lineGlyphRange : effectiveRange, actualGlyphRange: nil)
             let nextLineStart = lineCharRange.location + lineCharRange.length
             if nextLineStart <= charIndex { break }
             charIndex = nextLineStart
-            lineNumber += 1
+        }
+
+        // A trailing newline creates one more (empty) line that has no glyphs.
+        if string.length > 0, string.character(at: string.length - 1) == 10 {
+            let extraRect = layoutManager.extraLineFragmentRect
+            if extraRect.height > 0 {
+                drawNumber(lineStartIndices.count, inFragment: extraRect)
+            }
         }
     }
 }

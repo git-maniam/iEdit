@@ -80,6 +80,22 @@ final class SyntaxHighlighter {
                 TokenRule(pattern: "-?\\b\\d+(\\.\\d+)?\\b", color: theme.number),
             ]
 
+        case .go:
+            let goKeywords = "\\b(break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)\\b"
+            let goLiterals = "\\b(true|false|nil|iota)\\b"
+            let goTypes = "\\b(bool|byte|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr|any)\\b"
+            let goBuiltins = "\\b(append|cap|clear|close|complex|copy|delete|imag|len|make|max|min|new|panic|print|println|real|recover)\\b"
+            return [
+                TokenRule(pattern: "//.*", color: theme.comment),
+                TokenRule(pattern: "/\\*[\\s\\S]*?\\*/", color: theme.comment),
+                TokenRule(pattern: "`[^`]*`|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])'", color: theme.string),
+                TokenRule(pattern: goKeywords, color: theme.keyword),
+                TokenRule(pattern: goTypes, color: theme.type),
+                TokenRule(pattern: goBuiltins, color: theme.attribute),
+                TokenRule(pattern: goLiterals, color: theme.literal),
+                TokenRule(pattern: "-?\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b|\\b0[xX][0-9A-Fa-f]+\\b", color: theme.number),
+            ]
+
         case .markdown:
             return [
                 TokenRule(pattern: "```[\\s\\S]*?```", color: theme.literal),
@@ -134,7 +150,7 @@ final class SyntaxHighlighter {
             textStorage.beginEditing()
             textStorage.removeAttribute(.foregroundColor, range: range)
             textStorage.addAttribute(.foregroundColor, value: theme.editorForeground, range: range)
-            textStorage.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular), range: range)
+            textStorage.addAttribute(.font, value: EditorFontManager.shared.font, range: range)
             textStorage.endEditing()
             return
         }
@@ -184,7 +200,7 @@ final class SyntaxHighlighter {
         textStorage.beginEditing()
         textStorage.removeAttribute(.foregroundColor, range: range)
         textStorage.addAttribute(.foregroundColor, value: theme.editorForeground, range: range)
-        textStorage.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular), range: range)
+        textStorage.addAttribute(.font, value: EditorFontManager.shared.font, range: range)
         for rule in rules {
             rule.regex.enumerateMatches(in: textStorage.string, options: [], range: range) { match, _, _ in
                 guard let match = match else { return }
